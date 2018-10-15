@@ -58,6 +58,12 @@ type Quotations() =
                 let ident = mkIdent range v.Name
                 SynExpr.Ident ident
             
+            | Lambda(v, (Call(instance,methodInfo,[Var(v0)]) as call)) when v = v0 ->
+                //dependencies.Append v.Type
+                match instance with 
+                | Some i -> exprToAst (Expr.CallUnchecked(i,methodInfo,[]))
+                | None -> exprToAst (Expr.CallUnchecked(methodInfo,[]))
+            
             | Lambda(v, body) ->
                 //dependencies.Append v.Type
                 let vType = sysTypeToSynType range v.Type knownNamespaces ommitEnclosingType
@@ -267,7 +273,7 @@ type Quotations() =
                 //dependencies.Append methodInfo.DeclaringType
                 let synArgs = List.map exprToAst args
                 let paramInfo = methodInfo.GetOptionalParameterInfo()
-                let synArgs = List.map2 (mkArgumentBinding range) paramInfo synArgs |> List.toArray
+                let synArgs = Seq.map2 (mkArgumentBinding range) paramInfo synArgs |> Seq.toArray
                 
                 if PrettyNaming.IsMangledOpName methodInfo.Name then
                     let opName = sysMemberToSynMember range methodInfo knownNamespaces ommitEnclosingType
@@ -278,10 +284,12 @@ type Quotations() =
                 // it seems that the only way to do this is by parsing F# assembly signature metadata
                 // for now, use a heuristic that happens to hold for FSharp.Core operators
                 // but not user-defined values. These are not supported for now.
+                // if synArgs is empty but paramInfo is of length 1 then we're rewriting an unchecked call
                 let defaultGrouping =
                     if Array.isEmpty synArgs && 
                         (methodInfo.ContainsAttribute<RequiresExplicitTypeArgumentsAttribute> ()
-                            || methodInfo.ContainsAttribute<GeneralizableValueAttribute> ()) then []
+                            || methodInfo.ContainsAttribute<GeneralizableValueAttribute> ()
+                            || paramInfo.Length = 1) then []
                     else [synArgs.Length]
     
                 let groupings = defaultArg (tryGetCurriedFunctionGroupings methodInfo) defaultGrouping
